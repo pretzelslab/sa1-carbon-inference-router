@@ -9,7 +9,7 @@ preeti.raghuveer@gmail.com
 
 ## Abstract
 
-This paper proposes a real-time carbon-aware inference routing framework for large language models (LLMs). Requests are routed between model tiers based on task complexity and live grid carbon intensity, targeting measurable emissions reduction without accuracy or latency loss. The framework — SA1 — combines per-prompt complexity scoring, a real-time carbon intensity feed, and a multi-objective routing engine to direct each inference request to the smallest model capable of satisfying its accuracy floor and latency SLA. Preliminary analysis on a 1M prompt/day production system suggests ~62% reduction in inference carbon by routing approximately 65% of requests to a 7B-parameter model. The framework is serving-layer-agnostic and integrates with existing LLM deployment infrastructure (vLLM, Ollama). Full implementation and empirical benchmarks are in progress.
+This paper proposes a real-time carbon-aware inference routing framework for large language models (LLMs). Requests are routed between model tiers based on task complexity and live grid carbon intensity, targeting measurable emissions reduction without accuracy or latency loss. The framework — CAIR — combines per-prompt complexity scoring, a real-time carbon intensity feed, and a multi-objective routing engine to direct each inference request to the smallest model capable of satisfying its accuracy floor and latency SLA. Preliminary analysis on a 1M prompt/day production system suggests ~62% reduction in inference carbon by routing approximately 65% of requests to a 7B-parameter model. The framework is serving-layer-agnostic and integrates with existing LLM deployment infrastructure (vLLM, Ollama). Full implementation and empirical benchmarks are in progress.
 
 **Keywords:** carbon-aware inference, LLM routing, sustainable AI, green AI, inference efficiency, EU AI Act Art.53, CSRD Scope 2, multi-objective optimisation
 
@@ -21,13 +21,13 @@ Inference now accounts for 60–90% of the total energy consumption of deployed 
 
 The consequence is systematic over-provisioning: a prompt asking for a one-sentence summary consumes the same compute as a prompt requiring multi-step legal reasoning. This waste is both financially and environmentally costly, and it scales linearly with inference volume.
 
-We propose that prompt-level routing — directing each request to the smallest model capable of satisfying its requirements — is the highest-leverage intervention available to reduce inference emissions without retraining or replacing models. This paper introduces SA1, a framework that makes this routing automatic, real-time, and carbon-aware.
+We propose that prompt-level routing — directing each request to the smallest model capable of satisfying its requirements — is the highest-leverage intervention available to reduce inference emissions without retraining or replacing models. This paper introduces CAIR, a framework that makes this routing automatic, real-time, and carbon-aware.
 
 ---
 
 ## 2. Related Work
 
-Several efforts have addressed energy efficiency in ML inference, but none combine the full set of capabilities SA1 targets.
+Several efforts have addressed energy efficiency in ML inference, but none combine the full set of capabilities CAIR targets.
 
 **Clover [SC'23]** explored carbon-accuracy-latency tradeoffs in ML inference. It remains a research prototype and does not integrate with production LLM serving infrastructure (e.g., vLLM), nor does it incorporate real-time grid carbon intensity data.
 
@@ -37,15 +37,15 @@ Several efforts have addressed energy efficiency in ML inference, but none combi
 
 **Electricity Maps and WattTime** provide live grid carbon intensity data by zone. They are data providers only, with no routing logic or LLM integration.
 
-The gap SA1 addresses is the combination of: (1) per-prompt complexity scoring, (2) real-time grid carbon intensity, (3) production serving integration, and (4) multi-objective routing over carbon, accuracy, and latency simultaneously.
+The gap CAIR addresses is the combination of: (1) per-prompt complexity scoring, (2) real-time grid carbon intensity, (3) production serving integration, and (4) multi-objective routing over carbon, accuracy, and latency simultaneously.
 
 ---
 
-## 3. The SA1 Framework
+## 3. The CAIR Framework
 
 ### 3.1 Overview
 
-SA1 is a routing layer that sits in front of any LLM serving infrastructure. It intercepts each inference request, scores it, and dispatches it to the appropriate model tier. The routing decision is made in under 10ms (p99 target) and adds negligible user-facing latency.
+CAIR is a routing layer that sits in front of any LLM serving infrastructure. It intercepts each inference request, scores it, and dispatches it to the appropriate model tier. The routing decision is made in under 10ms (p99 target) and adds negligible user-facing latency.
 
 ```
 incoming prompt
@@ -117,7 +117,7 @@ To establish order-of-magnitude plausibility, we model a production system servi
 **Without routing (all requests to 70B):**  
 1,000,000 × (500/1000) × 0.006 kWh × 0.4 kgCO2/kWh = **1,200 kgCO2/day**
 
-**With SA1 routing:**  
+**With CAIR routing:**  
 650,000 × (500/1000) × 0.0003 × 0.4 + 350,000 × (500/1000) × 0.006 × 0.4  
 = 39 + 420 = **459 kgCO2/day**
 
@@ -129,11 +129,11 @@ These figures are back-of-envelope and will be replaced with empirically measure
 
 ## 5. Regulatory Alignment
 
-SA1 is designed to directly support compliance reporting under:
+CAIR is designed to directly support compliance reporting under:
 
-- **EU AI Act Art.53** — requires General Purpose AI (GPAI) model providers to report energy consumption; SA1's audit log provides per-request carbon attribution suitable for aggregation into compliance reports
-- **CSRD / ESRS E1** — Scope 2 emissions from server energy are reportable; SA1's routing decisions and audit trail provide the granularity needed for AI-specific Scope 2 attribution
-- **ISSB S2** — climate risk disclosures increasingly require operational AI footprint quantification; SA1 provides both reduction mechanism and measurement infrastructure
+- **EU AI Act Art.53** — requires General Purpose AI (GPAI) model providers to report energy consumption; CAIR's audit log provides per-request carbon attribution suitable for aggregation into compliance reports
+- **CSRD / ESRS E1** — Scope 2 emissions from server energy are reportable; CAIR's routing decisions and audit trail provide the granularity needed for AI-specific Scope 2 attribution
+- **ISSB S2** — climate risk disclosures increasingly require operational AI footprint quantification; CAIR provides both reduction mechanism and measurement infrastructure
 
 The alignment between carbon reduction and regulatory reporting is intentional: the same routing layer that saves emissions also generates the audit trail needed to prove it.
 
@@ -147,7 +147,7 @@ The alignment between carbon reduction and regulatory reporting is intentional: 
 
 **Model accuracy variability.** The accuracy floor is specified per deployment but measured against general benchmarks (MMLU). Task-specific accuracy may diverge from benchmark scores; production deployments should calibrate accuracy floors empirically.
 
-**Cascading.** Some routing systems use cascading: attempt the small model, escalate to the large model if confidence is low. SA1 v1 does not implement cascading (it adds latency and complexity). This is a planned Phase 2 feature.
+**Cascading.** Some routing systems use cascading: attempt the small model, escalate to the large model if confidence is low. CAIR v1 does not implement cascading (it adds latency and complexity). This is a planned Phase 2 feature.
 
 **Future work** includes: empirical benchmark dataset (50 prompts, 5 complexity tiers, 3 domains), latency overhead measurement under load, accuracy comparison between routed and always-large baselines, and integration with vLLM and Ollama for production deployment validation.
 
@@ -155,7 +155,7 @@ The alignment between carbon reduction and regulatory reporting is intentional: 
 
 ## 7. Conclusion
 
-This paper has introduced SA1, a real-time carbon-aware inference routing framework for LLMs. By combining per-prompt complexity scoring with live grid carbon intensity data and multi-objective routing, SA1 targets a ~62% reduction in inference carbon on a representative production workload, without accuracy or latency compromise. The framework fills a gap not addressed by existing work: none of the current approaches combine per-prompt routing, real-time grid data, and production serving integration in a single deployable tool.
+This paper has introduced CAIR, a real-time carbon-aware inference routing framework for LLMs. By combining per-prompt complexity scoring with live grid carbon intensity data and multi-objective routing, CAIR targets a ~62% reduction in inference carbon on a representative production workload, without accuracy or latency compromise. The framework fills a gap not addressed by existing work: none of the current approaches combine per-prompt routing, real-time grid data, and production serving integration in a single deployable tool.
 
 The full implementation, empirical benchmarks, and production integration guide are in progress. Design documentation and the initial framework specification are available at: https://github.com/pretzelslab/sa1-carbon-inference-router
 
