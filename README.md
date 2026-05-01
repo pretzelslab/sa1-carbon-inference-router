@@ -2,7 +2,8 @@
 
 **Author:** Preeti Raghuveeran ([@pretzelslab](https://github.com/pretzelslab))  
 **Concept date:** 2026-04-30  
-**Status:** Design phase — Phase 1 build in progress
+**Status:** Design phase — Phase 1 build in progress  
+**Published as:** CAIR (Carbon-Aware Inference Router) — see preprint below
 
 > Route every LLM prompt to the right model size based on task complexity, live grid carbon intensity, latency budget, and accuracy floor — simultaneously.
 
@@ -254,3 +255,22 @@ This is the order-of-magnitude case for prompt-level routing. The exact number d
 ---
 
 *This repository establishes the design and prior art for SA1 as of 2026-04-30.*
+
+---
+
+## Cite this work
+
+If you reference this framework, please cite the Zenodo preprint:
+
+**Raghuveeran, P. (2026).** *Carbon-Aware Inference Routing for Large Language Models: A Real-Time Framework for Sustainable AI Serving.* Zenodo. https://doi.org/10.5281/zenodo.19934620
+
+```bibtex
+@misc{raghuveeran2026cair,
+  author       = {Raghuveeran, Preeti},
+  title        = {Carbon-Aware Inference Routing for Large Language Models: A Real-Time Framework for Sustainable AI Serving},
+  year         = 2026,
+  publisher    = {Zenodo},
+  doi          = {10.5281/zenodo.19934620},
+  url          = {https://doi.org/10.5281/zenodo.19934620}
+}
+```
