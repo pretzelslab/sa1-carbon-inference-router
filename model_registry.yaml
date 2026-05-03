@@ -1,0 +1,109 @@
+# model_registry.yaml
+# CAIR — Carbon-aware Inference Router
+# This file is the routing menu. Every model CAIR can route to lives here.
+# Edit this file to add models, update carbon estimates, or tune routing weights.
+# No code changes required — the routing engine reads this at startup.
+
+models:
+  - id: claude-haiku-4-5-20251001
+    tier: small
+    carbon_per_1k_tokens_gCO2: 0.08
+    latency_p50_ms: 250
+    context_window_tokens: 200000
+    quality_score: 0.68
+    preferred_regions:
+      - US-EAST
+      - EU-WEST
+
+  - id: claude-sonnet-4-6
+    tier: medium
+    carbon_per_1k_tokens_gCO2: 0.35
+    latency_p50_ms: 900
+    context_window_tokens: 200000
+    quality_score: 0.84
+    preferred_regions:
+      - US-EAST
+      - EU-WEST
+
+  - id: claude-opus-4-7
+    tier: large
+    carbon_per_1k_tokens_gCO2: 1.20
+    latency_p50_ms: 2500
+    context_window_tokens: 200000
+    quality_score: 0.95
+    preferred_regions:
+      - US-EAST
+
+# Routing weights — must sum to 1.0
+# quality_weight: how much task quality matters in model selection
+# carbon_weight:  how much grid carbon intensity matters
+# latency_weight: how much response speed matters
+routing_weights:
+  quality_weight: 0.5
+  carbon_weight: 0.3
+  latency_weight: 0.2
+
+# Complexity tier thresholds — used by complexity_scorer.py
+# Scores are normalised 0.0–1.0 from Claude Haiku's 1–3 output
+# Hysteresis buffer of 0.05 at each boundary: when borderline, route UP not down
+complexity_thresholds:
+  simple_max: 0.40        # score <= 0.40 → SIMPLE
+  simple_buffer: 0.45     # score 0.40–0.45 → borderline → MEDIUM
+  medium_max: 0.70        # score <= 0.70 → MEDIUM
+  medium_buffer: 0.75     # score 0.70–0.75 → borderline → COMPLEX
+
+# Static fallback carbon intensities (gCO2/kWh)
+# Used when Electricity Maps API is unavailable or rate-limited
+# Source: ElectricityMaps public data + Patterson 2021 + Luccioni 2023
+static_carbon_defaults:
+  FR: 50          # France — nuclear-heavy, very clean
+  CA-QC: 15       # Quebec — hydro, cleanest grid in dataset
+  CA: 130         # California — mixed renewables
+  DE: 350         # Germany — coal still in mix
+  IN: 650         # India — coal-heavy
+  US-CAL: 220     # US California (Electricity Maps zone code)
+  US-WECC: 380    # US West (wider region)
+  US-EAST: 300    # US East Coast approximation
+  EU-WEST: 150    # Western Europe approximation
+
+# Domain keywords that force COMPLEX routing regardless of prompt length or verb
+# Rule: summarise + any of these domains → COMPLEX (RAG retrieval also raises domain signal)
+high_stakes_domains:
+  legal:
+    - legal
+    - contract
+    - indemnity
+    - liability
+    - clause
+    - litigation
+    - jurisdiction
+  medical:
+    - medical
+    - diagnosis
+    - treatment
+    - clinical
+    - symptoms
+    - prescription
+    - pathology
+  code_review:
+    - code review
+    - architecture
+    - security audit
+    - vulnerability
+    - refactor
+    - system design
+  compliance:
+    - compliance
+    - GDPR
+    - CCPA
+    - regulation
+    - policy analysis
+    - audit
+    - governance
+  financial:
+    - financial
+    - investment
+    - risk assessment
+    - portfolio
+    - derivatives
+    - underwriting
