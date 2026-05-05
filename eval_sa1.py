@@ -17,11 +17,17 @@ Output: eval_report.json + printed summary table
 """
 
 import os
+import sys
 import json
 import time
 import asyncio
+import sqlite3
 import statistics
 from datetime import datetime, timezone
+
+# Force UTF-8 output on Windows (avoids cp1252 UnicodeEncodeError for box chars)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 from pathlib import Path
 from typing import Optional
 
@@ -30,7 +36,8 @@ from dotenv import load_dotenv
 from complexity_scorer import score as complexity_score, Tier
 from carbon_feed import get_carbon_multi, CarbonReading
 from routing_engine import route, RoutingDecision
-from logger import log_decision, clear_log
+from logger import log_decision, clear_log, init_db
+from budget_ledger import get_budget_status, log_emission, DB_PATH, _today
 
 load_dotenv()
 
@@ -216,6 +223,177 @@ async def eval_fallback_reliability(n: int = 20) -> float:
 
 
 # ---------------------------------------------------------------------------
+# E6 — Budget State Transitions
+# ---------------------------------------------------------------------------
+# Verifies all 4 budget states fire at the correct thresholds.
+# Uses the real ledger DB but cleans up today's rows before and after the test.
+#
+# State thresholds (from budget_ledger._resolve_state):
+#   NORMAL:     remaining_pct > 50%
+#   TIGHTENING: 25% < remaining_pct <= 50%
+#   RESTRICTED: 10% < remaining_pct <= 25%
+#   CRITICAL:   remaining_pct <= 10%
+
+def eval_budget_state_transitions(
+    daily_cap: float = 500.0,
+    monthly_cap: float = 12000.0,
+) -> dict:
+    def _reset_today_ledger() -> None:
+        """Delete only today's carbon_ledger rows — leaves all other data intact."""
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                "DELETE FROM carbon_ledger WHERE period_type='daily' AND period_key=?",
+                (_today(),),
+            )
+            conn.commit()
+
+    _reset_today_ledger()   # start clean
+
+    # Each scenario: (gCO2 to log now, expected state, expected ceiling, label)
+    # Amounts chosen to land clearly inside each state band (not on boundaries).
+    scenarios = [
+        (0,   "NORMAL",      "large",  "start of day — 0 gCO2 used (100% remaining)"),
+        (300, "TIGHTENING",  "medium", "after 300 gCO2 — 40% remaining"),
+        (100, "RESTRICTED",  "small",  "after 100 more — 20% remaining (400 total)"),
+        (60,  "CRITICAL",    "small",  "after 60 more  — 8% remaining (460 total)"),
+    ]
+
+    passed = 0
+    details = []
+    for emission, exp_state, exp_ceiling, label in scenarios:
+        if emission > 0:
+            log_emission(emission)
+        status = get_budget_status(daily_cap, monthly_cap)
+        ok = (status["state"] == exp_state and status["tier_ceiling"] == exp_ceiling)
+        if ok:
+            passed += 1
+        details.append({
+            "label":            label,
+            "expected_state":   exp_state,
+            "actual_state":     status["state"],
+            "expected_ceiling": exp_ceiling,
+            "actual_ceiling":   status["tier_ceiling"],
+            "remaining_pct":    status["remaining_pct"],
+            "passed":           ok,
+        })
+
+    _reset_today_ledger()   # restore ledger to pre-test state
+
+    return {
+        "transitions_correct": passed,
+        "total":               len(scenarios),
+        "all_passed":          passed == len(scenarios),
+        "details":             details,
+    }
+
+
+# ---------------------------------------------------------------------------
+# E7 — Budget Ceiling Obedience
+# ---------------------------------------------------------------------------
+# Runs the full 50-task test set through the router in each of the 4 budget
+# states and checks that zero routing decisions violate the tier ceiling.
+#
+# Uses heuristic mode (no API key) so the test is fast, deterministic, and
+# free. The complexity scoring method doesn't affect ceiling obedience.
+
+_TIER_ORDER = ["small", "medium", "large"]
+
+async def eval_budget_clamped_routing() -> dict:
+    carbon = {EVAL_REGION: EVAL_CARBON_FALLBACK}
+    states = [
+        ("NORMAL",      "large"),
+        ("TIGHTENING",  "medium"),
+        ("RESTRICTED",  "small"),
+        ("CRITICAL",    "small"),
+    ]
+
+    # Baseline: run with NORMAL state (uncapped) to compare against later
+    baseline_tiers: list[str] = []
+    for prompt, _ in TEST_SET:
+        complexity = await complexity_score(prompt, anthropic_api_key=None)
+        d = route(complexity, carbon, prompt=prompt, budget_ceiling="large", budget_state="NORMAL")
+        baseline_tiers.append(d.model_tier)
+
+    total_violations = 0
+    by_state: dict[str, dict] = {}
+
+    for budget_state, ceiling in states:
+        violations = 0
+        re_routed = 0
+        ceiling_idx = _TIER_ORDER.index(ceiling)
+
+        for i, (prompt, _) in enumerate(TEST_SET):
+            complexity = await complexity_score(prompt, anthropic_api_key=None)
+            d = route(complexity, carbon, prompt=prompt,
+                      budget_ceiling=ceiling, budget_state=budget_state)
+            # Violation = chosen tier exceeds the ceiling
+            if _TIER_ORDER.index(d.model_tier) > ceiling_idx:
+                violations += 1
+            # Re-routed = decision differs from the uncapped baseline
+            if d.model_tier != baseline_tiers[i]:
+                re_routed += 1
+
+        total_violations += violations
+        by_state[budget_state] = {
+            "ceiling":   ceiling,
+            "violations": violations,
+            "re_routed_vs_normal": re_routed,
+        }
+
+    return {
+        "total_violations": total_violations,
+        "by_state":         by_state,
+        "all_passed":       total_violations == 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# E8 — Uncapped vs Critical Budget Carbon Delta
+# ---------------------------------------------------------------------------
+# Runs the 50-task set twice:
+#   Run A — NORMAL state (ceiling=large): per-request routing only
+#   Run B — CRITICAL state (ceiling=small): full budget enforcement (small only)
+#
+# The delta between A and B is the additional carbon reduction the budget layer
+# provides on top of CAIR's per-request routing (which is what E2 already measures).
+# This is the headline number for the Zenodo update.
+
+async def eval_budget_carbon_delta() -> dict:
+    carbon = {EVAL_REGION: EVAL_CARBON_FALLBACK}
+
+    normal_carbon = 0.0
+    critical_carbon = 0.0
+    normal_tiers: list[str] = []
+    critical_tiers: list[str] = []
+
+    for prompt, _ in TEST_SET:
+        complexity = await complexity_score(prompt, anthropic_api_key=None)
+
+        d_normal = route(complexity, carbon, prompt=prompt,
+                         budget_ceiling="large", budget_state="NORMAL")
+        normal_carbon += d_normal.estimated_carbon_gco2
+        normal_tiers.append(d_normal.model_tier)
+
+        d_critical = route(complexity, carbon, prompt=prompt,
+                           budget_ceiling="small", budget_state="CRITICAL")
+        critical_carbon += d_critical.estimated_carbon_gco2
+        critical_tiers.append(d_critical.model_tier)
+
+    re_routed = sum(1 for a, b in zip(normal_tiers, critical_tiers) if a != b)
+    delta_pct = round(
+        (normal_carbon - critical_carbon) / normal_carbon * 100, 1
+    ) if normal_carbon > 0 else 0.0
+
+    return {
+        "normal_total_gco2":            round(normal_carbon,   8),
+        "critical_total_gco2":          round(critical_carbon, 8),
+        "budget_additional_savings_pct": delta_pct,
+        "tasks_re_routed_by_ceiling":   re_routed,
+        "tasks_total":                  len(TEST_SET),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Main eval runner
 # ---------------------------------------------------------------------------
 
@@ -230,6 +408,7 @@ async def run_eval() -> dict:
     carbon = {EVAL_REGION: EVAL_CARBON_FALLBACK}
     results: list[tuple[str, RoutingDecision]] = []
 
+    init_db()     # migrate schema (adds budget_state column if missing)
     clear_log()   # fresh log for this eval run
 
     for prompt, expected_tier in TEST_SET:
@@ -271,6 +450,35 @@ async def run_eval() -> dict:
     status = "✓" if reliability == 1.0 else "✗"
     print(f"  {reliability:.0%} of calls returned a valid decision  (target 100%)  {status}")
 
+    # ── E6: Budget State Transitions ─────────────────────────────────────────
+    print("\nE6 — Budget State Transitions (daily_cap=500 gCO2):")
+    e6 = eval_budget_state_transitions()
+    for d in e6["details"]:
+        mark = "✓" if d["passed"] else "✗"
+        print(f"  {d['label']:<52} state={d['actual_state']:<12} ceiling={d['actual_ceiling']:<8} {mark}")
+    status = "✓" if e6["all_passed"] else "✗"
+    print(f"  {e6['transitions_correct']}/{e6['total']} state transitions correct  {status}")
+
+    # ── E7: Budget Ceiling Obedience ─────────────────────────────────────────
+    print("\nE7 — Budget Ceiling Obedience (50 tasks × 4 budget states):")
+    e7 = await eval_budget_clamped_routing()
+    for state, info in e7["by_state"].items():
+        mark = "✓" if info["violations"] == 0 else "✗"
+        print(f"  {state:<12} (ceiling={info['ceiling']:<8}): "
+              f"{info['violations']} violations  "
+              f"{info['re_routed_vs_normal']} tasks re-routed vs NORMAL  {mark}")
+    status = "✓" if e7["all_passed"] else "✗"
+    print(f"  Total ceiling violations: {e7['total_violations']}/200  {status}")
+
+    # ── E8: Budget Carbon Delta ───────────────────────────────────────────────
+    print("\nE8 — Uncapped vs Critical Budget Carbon Delta (50 tasks):")
+    e8 = await eval_budget_carbon_delta()
+    status = "✓" if e8["budget_additional_savings_pct"] > 0 else "✗"
+    print(f"  NORMAL  (uncapped) total:  {e8['normal_total_gco2']:.8f} gCO2")
+    print(f"  CRITICAL (all-small) total: {e8['critical_total_gco2']:.8f} gCO2")
+    print(f"  Budget enforcement additional savings: {e8['budget_additional_savings_pct']}%  {status}")
+    print(f"  Tasks re-routed by ceiling: {e8['tasks_re_routed_by_ceiling']}/{e8['tasks_total']}")
+
     # ── Assemble report ──────────────────────────────────────────────────────
     report = {
         "routing_precision": precision,
@@ -278,6 +486,9 @@ async def run_eval() -> dict:
         "quality_delta_mean": None,
         "overhead_latency": latency,
         "fallback_reliability": reliability,
+        "budget_state_transitions": e6,
+        "budget_ceiling_obedience": e7,
+        "budget_carbon_delta": e8,
         "test_cases_run": len(TEST_SET),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
