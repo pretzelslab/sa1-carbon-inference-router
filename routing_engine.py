@@ -73,6 +73,7 @@ class RoutingDecision:
     estimated_carbon_gco2: float        # estimated gCO2 for this request
     latency_sla_ms: Optional[int]       # input SLA, if any
     routing_reason: str                 # human-readable explanation of decision
+    budget_state: str = "NORMAL"        # NORMAL | TIGHTENING | RESTRICTED | CRITICAL
     timestamp: float = field(default_factory=time.time)
 
 
@@ -200,6 +201,8 @@ def route(
     carbon_readings: dict[str, CarbonReading],
     sla_ms: Optional[int] = None,
     prompt: str = "",
+    budget_ceiling: str = "large",
+    budget_state: str = "NORMAL",
 ) -> RoutingDecision:
     """
     Produce a routing decision from complexity + carbon + SLA inputs.
@@ -214,6 +217,17 @@ def route(
         RoutingDecision with model_id, region, carbon estimate, and reasoning
     """
     reason_parts: list[str] = []
+
+    # ── Step 0: Apply budget ceiling ─────────────────────────────────────────
+    # The budget ledger may restrict which tiers are available this period.
+    # This check runs first — no other signal can override a budget constraint.
+    # COMPLEX tasks still receive the ceiling: if budget is CRITICAL and task is
+    # COMPLEX, we route to small but flag it. Quality is the caller's problem to
+    # handle — CAIR's job is to enforce the carbon governance contract.
+
+    ceiling_idx = _tier_index(budget_ceiling)
+    if budget_state != "NORMAL":
+        reason_parts.append(f"budget {budget_state} → ceiling={budget_ceiling}")
 
     # ── Step 1: Start from complexity tier ───────────────────────────────────
     # SIMPLE → small (Haiku), MEDIUM → medium (Sonnet), COMPLEX → large (Opus)
@@ -282,7 +296,16 @@ def route(
 
     tier_idx = _apply_sla_constraint(tier_idx, sla_ms, reason_parts)
 
-    # ── Step 6: Resolve final model + region ─────────────────────────────────
+    # ── Step 6: Enforce budget ceiling ───────────────────────────────────────
+    # After all per-request adjustments, clamp to budget ceiling.
+    # This is the final override — budget governance beats all other signals.
+    if tier_idx > ceiling_idx:
+        reason_parts.append(
+            f"budget ceiling clamp: {_tier_from_index(tier_idx)} → {budget_ceiling}"
+        )
+        tier_idx = ceiling_idx
+
+    # ── Step 7: Resolve final model + region ─────────────────────────────────
     final_tier = _tier_from_index(tier_idx)
     final_model = _get_model(final_tier)
 
@@ -294,7 +317,7 @@ def route(
     # Re-pick cleanest region for the final model (may differ from candidate)
     final_zone, final_reading = _pick_cleanest_region(final_model, carbon_readings)
 
-    # ── Step 7: Carbon estimate ───────────────────────────────────────────────
+    # ── Step 8: Carbon estimate ───────────────────────────────────────────────
     token_count = _estimate_tokens(prompt)
     carbon_estimate = _estimate_carbon(
         final_model, token_count, final_reading.carbon_gco2_per_kwh
@@ -311,6 +334,7 @@ def route(
         estimated_carbon_gco2=round(carbon_estimate, 6),
         latency_sla_ms=sla_ms,
         routing_reason=" | ".join(reason_parts),
+        budget_state=budget_state,
     )
 
 

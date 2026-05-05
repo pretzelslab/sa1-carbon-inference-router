@@ -262,7 +262,7 @@ This is the order-of-magnitude case for prompt-level routing. The exact number d
 
 If you reference this framework, please cite the Zenodo preprint:
 
-**Raghuveeran, P. (2026).** *Carbon-Aware Inference Routing for Large Language Models: A Real-Time Framework for Sustainable AI Serving.* Zenodo. https://doi.org/10.5281/zenodo.19934620
+**Raghuveeran, P. (2026).** *Carbon-Aware Inference Routing for Large Language Models: A Real-Time Framework for Sustainable AI Serving.* Zenodo. https://doi.org/10.5281/zenodo.19934621
 
 ```bibtex
 @misc{raghuveeran2026cair,
@@ -270,7 +270,7 @@ If you reference this framework, please cite the Zenodo preprint:
   title        = {Carbon-Aware Inference Routing for Large Language Models: A Real-Time Framework for Sustainable AI Serving},
   year         = 2026,
   publisher    = {Zenodo},
-  doi          = {10.5281/zenodo.19934620},
-  url          = {https://doi.org/10.5281/zenodo.19934620}
+  doi          = {10.5281/zenodo.19934621},
+  url          = {https://doi.org/10.5281/zenodo.19934621}
 }
 ```

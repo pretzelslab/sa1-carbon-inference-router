@@ -34,6 +34,13 @@ models:
     preferred_regions:
       - US-EAST
 
+# Carbon budget caps — enforced by budget_ledger.py
+# enforcement: hard = enforce tier ceiling | soft = warn only, routing unchanged
+carbon_budget:
+  daily_gCO2: 500.0
+  monthly_gCO2: 12000.0
+  enforcement: hard
+
 # Routing weights — must sum to 1.0
 # quality_weight: how much task quality matters in model selection
 # carbon_weight:  how much grid carbon intensity matters

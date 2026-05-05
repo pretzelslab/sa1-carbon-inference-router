@@ -9,9 +9,13 @@ preeti.raghuveer@gmail.com
 
 ## Abstract
 
-This paper proposes a real-time carbon-aware inference routing framework for large language models (LLMs). Requests are routed between model tiers based on task complexity and live grid carbon intensity, targeting measurable emissions reduction without accuracy or latency loss. The framework — CAIR — combines per-prompt complexity scoring, a real-time carbon intensity feed, and a multi-objective routing engine to direct each inference request to the smallest model capable of satisfying its accuracy floor and latency SLA. Preliminary analysis on a 1M prompt/day production system suggests ~62% reduction in inference carbon by routing approximately 65% of requests to a 7B-parameter model. The framework is serving-layer-agnostic and integrates with existing LLM deployment infrastructure (vLLM, Ollama). Full implementation and empirical benchmarks are in progress.
+This paper introduces CAIR, a real-time carbon-aware inference routing framework for large language models (LLMs). CAIR routes each inference request to the smallest model capable of satisfying its accuracy floor and latency SLA, using three concurrent signals: per-prompt complexity score, live grid carbon intensity, and a time-bounded carbon budget.
 
-**Keywords:** carbon-aware inference, LLM routing, sustainable AI, green AI, inference efficiency, EU AI Act Art.53, CSRD Scope 2, multi-objective optimisation
+The carbon budget layer tracks cumulative emissions against a configurable period cap (daily or monthly) and progressively constrains the available model tier as the budget depletes — enabling carbon governance at the inference layer rather than optimising only per request. Per-request signals optimise within whatever tier the budget permits.
+
+Preliminary analysis on a 1M prompt/day workload suggests ~62% reduction in inference carbon by routing approximately 65% of requests to a 7B-parameter model. The framework is serving-layer-agnostic and integrates with existing LLM deployment infrastructure (vLLM, Ollama). The audit logger is designed for direct use in CSRD ESRS E1 and EU AI Act Art.53 compliance reporting. Empirical benchmarks are in progress.
+
+**Keywords:** carbon-aware inference, LLM routing, sustainable AI, green AI, inference efficiency, carbon budget enforcement, EU AI Act Art.53, CSRD Scope 2, multi-objective optimisation
 
 ---
 
@@ -37,7 +41,7 @@ Several efforts have addressed energy efficiency in ML inference, but none combi
 
 **Electricity Maps and WattTime** provide live grid carbon intensity data by zone. They are data providers only, with no routing logic or LLM integration.
 
-The gap CAIR addresses is the combination of: (1) per-prompt complexity scoring, (2) real-time grid carbon intensity, (3) production serving integration, and (4) multi-objective routing over carbon, accuracy, and latency simultaneously.
+Recent work has explored per-request carbon minimisation in ML inference, including carbon-accuracy-latency tradeoffs [Clover, SC'23] and infrastructure-level geographic workload shifting [Green-LLM]. Cost-aware routing between model tiers is addressed by FrugalGPT [Chen et al., 2023] and LLM-Blender, though without a carbon signal. What remains unaddressed is carbon governance across a time horizon: no existing system tracks cumulative emissions against a period cap and progressively constrains model selection as the budget depletes. CAIR addresses this gap with a two-layer architecture — a budget enforcement layer over a per-request optimiser — and pairs it with an audit trail suitable for CSRD ESRS E1 reporting.
 
 ---
 
@@ -155,7 +159,7 @@ The alignment between carbon reduction and regulatory reporting is intentional: 
 
 ## 7. Conclusion
 
-This paper has introduced CAIR, a real-time carbon-aware inference routing framework for LLMs. By combining per-prompt complexity scoring with live grid carbon intensity data and multi-objective routing, CAIR targets a ~62% reduction in inference carbon on a representative production workload, without accuracy or latency compromise. The framework fills a gap not addressed by existing work: none of the current approaches combine per-prompt routing, real-time grid data, and production serving integration in a single deployable tool.
+This paper has introduced CAIR, a real-time carbon-aware inference routing framework for LLMs. By combining per-prompt complexity scoring with live grid carbon intensity data and multi-objective routing, CAIR targets a ~62% reduction in inference carbon on a representative production workload, without accuracy or latency compromise. CAIR introduces a two-layer architecture: a time-bounded carbon budget enforcement layer that progressively constrains model selection as cumulative emissions approach a period cap, combined with per-request multi-objective routing over complexity, carbon intensity, and latency. This combination enables carbon governance at the inference layer — reducing emissions while generating the audit trail needed for CSRD ESRS E1 and EU AI Act Art.53 compliance reporting.
 
 The full implementation, empirical benchmarks, and production integration guide are in progress. Design documentation and the initial framework specification are available at: https://github.com/pretzelslab/sa1-carbon-inference-router
 

@@ -45,9 +45,14 @@ CREATE TABLE IF NOT EXISTS routing_log (
     carbon_source           TEXT NOT NULL,
     estimated_carbon_gco2   REAL NOT NULL,
     sla_ms                  INTEGER,
-    routing_reason          TEXT NOT NULL
+    routing_reason          TEXT NOT NULL,
+    budget_state            TEXT NOT NULL DEFAULT 'NORMAL'
 );
 """
+
+_MIGRATE_ADD_BUDGET_STATE = (
+    "ALTER TABLE routing_log ADD COLUMN budget_state TEXT NOT NULL DEFAULT 'NORMAL'"
+)
 
 
 @contextmanager
@@ -65,6 +70,10 @@ def init_db() -> None:
     """Create the database and table if they don't exist yet. Safe to call repeatedly."""
     with _get_conn() as conn:
         conn.execute(_CREATE_TABLE)
+        try:
+            conn.execute(_MIGRATE_ADD_BUDGET_STATE)
+        except Exception:
+            pass  # column already exists — sqlite3 throws OperationalError on duplicate
 
 
 # ---------------------------------------------------------------------------
@@ -86,8 +95,9 @@ def log_decision(decision: RoutingDecision, prompt: str = "") -> None:
                 INSERT INTO routing_log (
                     timestamp, prompt_hash, model_id, model_tier, region,
                     complexity_score, complexity_tier, carbon_intensity_gco2,
-                    carbon_source, estimated_carbon_gco2, sla_ms, routing_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    carbon_source, estimated_carbon_gco2, sla_ms, routing_reason,
+                    budget_state
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     datetime.datetime.utcnow().isoformat() + "Z",
@@ -102,6 +112,7 @@ def log_decision(decision: RoutingDecision, prompt: str = "") -> None:
                     decision.estimated_carbon_gco2,
                     decision.latency_sla_ms,
                     decision.routing_reason,
+                    decision.budget_state,
                 ),
             )
     except Exception as e:
