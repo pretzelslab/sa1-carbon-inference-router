@@ -31,6 +31,7 @@ if hasattr(sys.stdout, "reconfigure"):
 from pathlib import Path
 from typing import Optional
 
+import anthropic
 from dotenv import load_dotenv
 
 from complexity_scorer import score as complexity_score, Tier
@@ -163,13 +164,118 @@ def eval_carbon_savings(results: list[tuple[str, RoutingDecision]]) -> float:
 
 
 # ---------------------------------------------------------------------------
-# E3 — Quality Delta (Phase 2 placeholder)
+# E3 — Quality Delta (Phase 2 — live inference + cosine similarity)
 # ---------------------------------------------------------------------------
-# Requires running actual inference on both Haiku and Opus and comparing outputs.
-# Skipped in Phase 1 — returns None with an explanation.
+# For each SIMPLE task in the test set:
+#   1. Call Haiku  → get its answer
+#   2. Call Opus   → get its answer (this is the "gold standard" reference)
+#   3. Embed both answers as vectors using sentence-transformers
+#   4. Compute cosine similarity between the two vectors (0.0 = totally different,
+#      1.0 = identical meaning)
+#
+# Why cosine similarity?
+#   Two sentences can use different words but mean the same thing. Cosine similarity
+#   compares the *meaning* (via embeddings), not the exact wording. That's what we
+#   care about — does Haiku understand the question as well as Opus does?
+#
+# Target: mean similarity ≥ 0.85 across all SIMPLE tasks.
+# This means Haiku's answers are at least 85% semantically equivalent to Opus's.
+#
+# Requires: ANTHROPIC_API_KEY in .env, sentence-transformers installed.
+# Falls back to None with a warning if either is missing.
 
-def eval_quality_delta() -> Optional[float]:
-    return None   # Phase 2: cosine similarity between Haiku and Opus outputs
+async def eval_quality_delta(api_key: Optional[str] = None) -> Optional[dict]:
+    if not api_key:
+        return None   # no key — skip silently
+
+    # Import here so missing sentence-transformers doesn't break the whole eval
+    try:
+        from sentence_transformers import SentenceTransformer
+        import numpy as np
+    except ImportError:
+        print("  sentence-transformers not installed — run: pip install sentence-transformers")
+        return None
+
+    # ── Step 1: Collect only the SIMPLE tasks ───────────────────────────────
+    simple_tasks = [prompt for prompt, tier in TEST_SET if tier == "SIMPLE"]
+
+    # ── Step 2: Load the embedding model ────────────────────────────────────
+    # all-MiniLM-L6-v2: small (~80 MB), fast, good semantic accuracy.
+    # Downloads once on first run, then cached locally.
+    # We run this in an executor because model loading is synchronous/blocking.
+    loop = asyncio.get_event_loop()
+    embedder = await loop.run_in_executor(
+        None, lambda: SentenceTransformer("all-MiniLM-L6-v2")
+    )
+
+    # ── Step 3: Call Haiku and Opus for each SIMPLE task ────────────────────
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    haiku_model = "claude-haiku-4-5-20251001"
+    opus_model  = "claude-opus-4-7"
+
+    similarities: list[float] = []
+    task_details: list[dict] = []
+
+    print(f"  Running {len(simple_tasks)} SIMPLE tasks × 2 models (Haiku + Opus)...")
+
+    for task in simple_tasks:
+        try:
+            # Call both models concurrently — asyncio.gather runs them in parallel
+            haiku_resp, opus_resp = await asyncio.gather(
+                client.messages.create(
+                    model=haiku_model, max_tokens=256,
+                    messages=[{"role": "user", "content": task}]
+                ),
+                client.messages.create(
+                    model=opus_model, max_tokens=256,
+                    messages=[{"role": "user", "content": task}]
+                ),
+            )
+
+            haiku_text = haiku_resp.content[0].text.strip()
+            opus_text  = opus_resp.content[0].text.strip()
+
+            # ── Step 4: Embed both answers and compute cosine similarity ─────
+            # SentenceTransformer.encode() converts text → a vector of numbers.
+            # We run this synchronously in an executor to avoid blocking.
+            haiku_vec, opus_vec = await loop.run_in_executor(
+                None,
+                lambda t=(haiku_text, opus_text): embedder.encode(list(t))
+            )
+
+            # Cosine similarity formula:
+            # dot product of both vectors / (length of vec A × length of vec B)
+            # Result is always between -1 and 1. For sentences: usually 0.5–1.0.
+            dot    = float(np.dot(haiku_vec, opus_vec))
+            norm_a = float(np.linalg.norm(haiku_vec))
+            norm_b = float(np.linalg.norm(opus_vec))
+            sim    = dot / (norm_a * norm_b) if (norm_a * norm_b) > 0 else 0.0
+            similarities.append(sim)
+
+            task_details.append({
+                "task": task,
+                "haiku_answer": haiku_text[:120] + "..." if len(haiku_text) > 120 else haiku_text,
+                "opus_answer":  opus_text[:120]  + "..." if len(opus_text)  > 120 else opus_text,
+                "cosine_similarity": round(sim, 4),
+            })
+
+        except Exception as e:
+            print(f"    ⚠ skipped '{task[:40]}...' — {e}")
+
+    if not similarities:
+        return None
+
+    mean_sim = round(sum(similarities) / len(similarities), 4)
+    min_sim  = round(min(similarities), 4)
+
+    return {
+        "mean_cosine_similarity": mean_sim,
+        "min_cosine_similarity":  min_sim,
+        "tasks_evaluated":        len(similarities),
+        "target":                 0.85,
+        "passed":                 mean_sim >= 0.85,
+        "details":                task_details,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -434,8 +540,18 @@ async def run_eval() -> dict:
     print(f"  {savings:.1f}% reduction  (target ≥ 40%)  {status}")
 
     # ── E3: Quality Delta ────────────────────────────────────────────────────
-    print("\nE3 — Quality Delta:")
-    print("  Skipped (Phase 2) — requires live inference comparison")
+    print("\nE3 — Quality Delta (Haiku vs Opus, SIMPLE tasks only):")
+    e3 = await eval_quality_delta(api_key=ANTHROPIC_API_KEY)
+    if e3 is None:
+        print("  Skipped — set ANTHROPIC_API_KEY and install sentence-transformers")
+    else:
+        status = "✓" if e3["passed"] else "✗"
+        print(f"  Mean cosine similarity: {e3['mean_cosine_similarity']:.4f}  "
+              f"(target ≥ 0.85)  {status}")
+        print(f"  Min similarity: {e3['min_cosine_similarity']:.4f}  "
+              f"across {e3['tasks_evaluated']} SIMPLE tasks")
+        for d in e3["details"]:
+            print(f"    [{d['cosine_similarity']:.3f}] {d['task']}")
 
     # ── E4: Overhead Latency ─────────────────────────────────────────────────
     print("\nE4 — Routing Overhead Latency (heuristic mode, n=100):")
@@ -483,7 +599,7 @@ async def run_eval() -> dict:
     report = {
         "routing_precision": precision,
         "carbon_savings_pct": savings,
-        "quality_delta_mean": None,
+        "quality_delta": e3,
         "overhead_latency": latency,
         "fallback_reliability": reliability,
         "budget_state_transitions": e6,

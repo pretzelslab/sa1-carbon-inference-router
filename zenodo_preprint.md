@@ -13,7 +13,7 @@ This paper introduces CAIR, a real-time carbon-aware inference routing framework
 
 The carbon budget layer tracks cumulative emissions against a configurable period cap (daily or monthly) and progressively constrains the available model tier as the budget depletes — enabling carbon governance at the inference layer rather than optimising only per request. Per-request signals optimise within whatever tier the budget permits.
 
-Preliminary analysis on a 1M prompt/day workload suggests ~62% reduction in inference carbon by routing approximately 65% of requests to a 7B-parameter model. The framework is serving-layer-agnostic and integrates with existing LLM deployment infrastructure (vLLM, Ollama). The audit logger is designed for direct use in CSRD ESRS E1 and EU AI Act Art.53 compliance reporting. Phase 1 empirical evaluation on 50 human-labelled tasks confirms: routing precision of 100% on simple tasks, 90% on medium tasks, and 100% on complex tasks; 45.5% carbon reduction vs an always-large baseline; routing overhead P95 of 0.27ms; 100% fallback reliability; and 4/4 budget state transitions with zero ceiling violations across 200 routing decisions. The budget enforcement layer independently delivers 92.5% carbon reduction in CRITICAL state vs uncapped per-request routing.
+Preliminary analysis on a 1M prompt/day workload suggests ~62% reduction in inference carbon by routing approximately 65% of requests to a 7B-parameter model. The framework is serving-layer-agnostic and integrates with existing LLM deployment infrastructure (vLLM, Ollama). The audit logger is designed for direct use in CSRD ESRS E1 and EU AI Act Art.53 compliance reporting. Empirical evaluation on 50 human-labelled tasks confirms: routing precision of 100% on simple tasks, 90% on medium tasks, and 100% on complex tasks; 45.5% carbon reduction vs an always-large baseline; routing overhead P95 of 0.27ms; 100% fallback reliability; 4/4 budget state transitions with zero ceiling violations across 200 routing decisions; and a budget enforcement layer that independently delivers 92.5% carbon reduction in CRITICAL state vs uncapped per-request routing. Quality delta evaluation (Phase 2) confirms that outputs from the small model (Claude Haiku) achieve a mean cosine similarity of 0.90 against the large model (Claude Opus) on simple tasks, validating that carbon savings do not come at the cost of response quality.
 
 **Keywords:** carbon-aware inference, LLM routing, sustainable AI, green AI, inference efficiency, carbon budget enforcement, EU AI Act Art.53, CSRD Scope 2, multi-objective optimisation
 
@@ -145,7 +145,7 @@ The alignment between carbon reduction and regulatory reporting is intentional: 
 
 ## 6. Limitations and Future Work
 
-**Complexity scoring accuracy.** The v1 rule-based scorer is an approximation. Misclassification of a complex prompt as simple will route it to an undersized model, potentially degrading response quality. Version 2 (DistilBERT fine-tuned on labelled data) addresses this. Phase 1 empirical benchmarks are complete (see eval_sa1.py in the repository); Phase 2 will add quality delta measurement via cosine similarity between routed-model and always-large outputs.
+**Complexity scoring accuracy.** The v1 rule-based scorer is an approximation. Misclassification of a complex prompt as simple will route it to an undersized model, potentially degrading response quality. Version 2 (DistilBERT fine-tuned on labelled data) addresses this. Phase 2 quality delta evaluation (E3) measured a mean cosine similarity of 0.90 between Haiku and Opus outputs on simple tasks (minimum 0.80), confirming acceptable quality preservation. The one task with the lowest similarity (Translate 'hello' to Spanish, 0.796) reflects a style difference — Haiku returned "Hola" while Opus provided a fuller explanation — rather than a factual error.
 
 **Carbon data latency.** Grid carbon intensity can change within the 5-minute cache window. A shorter TTL improves accuracy at the cost of more API calls. The tradeoff is configurable.
 
@@ -161,7 +161,7 @@ The alignment between carbon reduction and regulatory reporting is intentional: 
 
 This paper has introduced CAIR, a real-time carbon-aware inference routing framework for LLMs. By combining per-prompt complexity scoring with live grid carbon intensity data and multi-objective routing, CAIR targets a ~62% reduction in inference carbon on a representative production workload, without accuracy or latency compromise. CAIR introduces a two-layer architecture: a time-bounded carbon budget enforcement layer that progressively constrains model selection as cumulative emissions approach a period cap, combined with per-request multi-objective routing over complexity, carbon intensity, and latency. This combination enables carbon governance at the inference layer — reducing emissions while generating the audit trail needed for CSRD ESRS E1 and EU AI Act Art.53 compliance reporting.
 
-The Phase 1 implementation and empirical benchmarks are complete. Phase 2 (FastAPI serving layer, output quality checker, and production integration guide) is in progress. Design documentation, source code, and the Phase 1 eval harness are available at: https://github.com/pretzelslab/sa1-carbon-inference-router
+The Phase 1 and Phase 2 implementations are complete. Phase 2 delivers a FastAPI serving layer (POST /route, POST /route-and-call, GET /health) and the quality delta evaluation (E3: mean cosine similarity 0.90 on simple tasks), confirming that routing to smaller models preserves response quality. Design documentation, source code, and the full eval harness are available at: https://github.com/pretzelslab/sa1-carbon-inference-router
 
 ---
 
@@ -181,6 +181,6 @@ Wu, C. J., et al. (2023). Clover: Toward Sustainable AI with Carbon-Aware Machin
 
 ---
 
-*This is a preprint. Phase 1 implementation and benchmarks are complete. The full paper with Phase 2 empirical results (quality delta, multi-provider comparison) is in progress.*  
+*This is a preprint. Phase 1 and Phase 2 implementations and benchmarks are complete. The full paper with Phase 3 empirical results (multi-provider comparison, OpenAI vs Claude routing) is in progress.*  
 *Framework repository: https://github.com/pretzelslab/sa1-carbon-inference-router*  
 *Concept date: 2026-04-30*
