@@ -1,6 +1,6 @@
 # SA1 — Carbon-Aware LLM Inference Router
 
-**Author:** Preeti Raghuveeran ([@pretzelslab](https://github.com/pretzelslab))  
+**Author:** [@pretzelslab](https://github.com/pretzelslab)  
 **Concept date:** 2026-04-30  
 **Status:** Design phase — Phase 1 build in progress  
 **Published as:** CAIR (Carbon-Aware Inference Router) — see preprint below
