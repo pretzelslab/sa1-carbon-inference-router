@@ -1,11 +1,12 @@
-# SA1 — Carbon-Aware LLM Inference Router
+# CAIR: Carbon Aware Inference Routing for Large Language Models
 
-**Author:** [@pretzelslab](https://github.com/pretzelslab)  
-**Concept date:** 2026-04-30  
-**Status:** Design phase — Phase 1 build in progress  
-**Published as:** CAIR (Carbon-Aware Inference Router) — see preprint below
+**Author:** [@pretzelslab](https://github.com/pretzelslab)<br>
+**Status:** Implemented and evaluated<br>
+**Research status:** Accepted for presentation at IEEE GAISS 2026<br>
+**Preprint:** [Zenodo](https://doi.org/10.5281/zenodo.19934621)<br>
+**Implementation:** Reference implementation and evaluation artifacts for CAIR
 
-> Route every LLM prompt to the right model size based on task complexity, live grid carbon intensity, latency budget, and accuracy floor — simultaneously.
+> Route each LLM request to an appropriate model tier using task complexity, grid carbon intensity, latency requirements, accuracy constraints, and carbon budget signals.
 
 ---
 
@@ -162,43 +163,22 @@ This is the missing layer between "I know my model uses energy" (existing carbon
 
 ---
 
-## Phases
+## Implementation
 
-### Phase 1 — Working Router (local demo)
+CAIR is implemented as a modular routing framework with separate components for prompt complexity assessment, carbon intensity signals, routing decisions, model configuration, budget tracking, audit logging, and evaluation.
 
-**Goal:** Prove the routing logic works end-to-end on a local setup.
+| Component | Repository file | Purpose |
+|---|---|---|
+| Complexity Scorer | `complexity_scorer.py` | Assesses prompt complexity for routing decisions |
+| Carbon Feed | `carbon_feed.py` | Provides carbon intensity signals with fallback handling |
+| Routing Engine | `routing_engine.py` | Selects an appropriate model tier using routing constraints |
+| Model Registry | `model_registry.yaml` | Defines available model profiles and routing characteristics |
+| Router API | `router_api.py` | Exposes the CAIR routing workflow through an API |
+| Carbon Budget Ledger | `budget_ledger.py` | Tracks carbon budget usage across routing decisions |
+| Audit Logger | `logger.py` | Records routing decisions and associated metadata |
+| Evaluation | `eval_sa1.py` | Supports evaluation of CAIR routing behavior |
 
-| Deliverable | Description |
-|---|---|
-| `complexity_scorer.py` | Rule-based prompt classifier: simple / moderate / complex / expert |
-| `carbon_feed.py` | Electricity Maps API wrapper with 5-min cache and fallback |
-| `routing_engine.py` | Multi-objective router: complexity × carbon × latency × accuracy |
-| `model_registry.yaml` | 3 model configs: 7B (Llama 3) · 13B (Mistral) · 70B (Llama 3) |
-| `router_api.py` | FastAPI endpoint: POST /route → returns model_id + routing_rationale |
-| `audit_logger.py` | Structured per-request log (no raw prompt text stored) |
-| Demo run | 10 prompts across complexity levels → show routing decisions + carbon saved |
-| `eval_sa1.py` | Accuracy proxy eval: does small-model routing degrade output quality? |
-
-**Definition of done:** Router assigns correct model tier to 8/10 test prompts. Carbon saved vs always-large-model is measurable. Audit log writes correctly.
-
-### Phase 2 — Evaluation & Benchmarking
-
-| Deliverable | Description |
-|---|---|
-| Benchmark dataset | 50 prompts across 5 complexity tiers, 3 domains (legal, code, general) |
-| Accuracy comparison | Small model routed vs large model baseline — gap measured on real outputs |
-| Carbon savings report | gCO2eq saved per 1,000 prompts at different routing thresholds |
-| Latency overhead | Routing layer p50/p95 measured under load |
-| Grid sensitivity | How much does routing change when carbon intensity doubles? |
-
-### Phase 3 — Portfolio page + GitHub publish
-
-| Deliverable | Description |
-|---|---|
-| preetibuilds page `/carbon-router` | React: live routing demo (pre-recorded), benchmark chart, carbon savings calculator |
-| PageGate protection | SAR2026 |
-| GitHub repo public | Full Phase 1+2 code, README, benchmark results |
-| Portfolio tile | Under Sustainable AI section |
+The implementation is designed so that routing logic, carbon signals, model characteristics, and evaluation can be inspected independently rather than being embedded in a single serving component.
 
 ---
 
@@ -229,7 +209,7 @@ Assumptions:
 **With routing (65% to 7B):** 650K × 0.0003 + 350K × 0.006 = 195 + 2,100 → × 0.4 = **~918 kgCO2/day**  
 **Saving: ~62% reduction in inference carbon** for a system that already exists, with no model changes.
 
-This is the order-of-magnitude case for prompt-level routing. The exact number depends on workload distribution and model TDP profiles — Phase 2 benchmarks will measure this precisely.
+This is the order-of-magnitude case for prompt-level routing. The exact reduction depends on workload distribution, model energy profiles, grid carbon intensity, and routing thresholds. The evaluation artifacts in this repository provide the current CAIR results and methodology.
 
 ---
 
@@ -245,12 +225,17 @@ This is the order-of-magnitude case for prompt-level routing. The exact number d
 
 ## Status
 
-- [x] Concept scoped (2026-04-30)
-- [x] Competitive gap confirmed (2026-04-30)
-- [x] Architecture designed (2026-04-30)
-- [ ] Phase 1 build
-- [ ] Phase 2 benchmarks
-- [ ] Phase 3 portfolio page
+CAIR has progressed from initial concept and architecture into an implemented and evaluated reference framework.
+
+- [x] Concept scoped
+- [x] Architecture designed
+- [x] Reference implementation completed
+- [x] Evaluation artifacts added
+- [x] Research preprint published
+- [x] Accepted for presentation at IEEE GAISS 2026
+- [ ] Further validation and extensions
+
+This repository now serves as the reference implementation and supporting technical artifact set for CAIR.
 
 ---
 
