@@ -2,7 +2,6 @@
 
 **Author:** [@pretzelslab](https://github.com/pretzelslab)<br>
 **Status:** Implemented and evaluated<br>
-**Research status:** Accepted for presentation at IEEE GAISS 2026<br>
 **Preprint:** [Zenodo](https://doi.org/10.5281/zenodo.19934621)<br>
 **Implementation:** Reference implementation and evaluation artifacts for CAIR
 
